@@ -1,3 +1,9 @@
+//  LiveActivityWidget.swift
+//  LiveActivity_Practice
+//
+//  Created by 현진백 on 2026/07/14.
+//
+
 import ActivityKit
 import SwiftUI
 import WidgetKit

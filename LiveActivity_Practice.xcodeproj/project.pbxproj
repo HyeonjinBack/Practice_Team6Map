@@ -9,13 +9,14 @@
 /* Begin PBXBuildFile section */
 		A10000000000000000000001 /* LiveActivityWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A10000000000000000000010 /* LiveActivityWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		A10000000000000000000002 /* LiveActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000011 /* LiveActivityWidget.swift */; };
-		A10000000000000000000005 /* LiveActivity_Practice/Walking/Domain/WalkingModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000015 /* LiveActivity_Practice/Walking/Domain/WalkingModels.swift */; };
-		A10000000000000000000006 /* LiveActivity_Practice/Walking/Presentation/WalkingActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000016 /* LiveActivity_Practice/Walking/Presentation/WalkingActivityAttributes.swift */; };
-		A10000000000000000000007 /* LiveActivity_Practice/Walking/Presentation/StopWalkingIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000017 /* LiveActivity_Practice/Walking/Presentation/StopWalkingIntent.swift */; };
+		A10000000000000000000005 /* WalkingModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000015 /* WalkingModels.swift */; };
+		A10000000000000000000006 /* WalkingActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000016 /* WalkingActivityAttributes.swift */; };
+		A10000000000000000000007 /* StopWalkingIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000017 /* StopWalkingIntent.swift */; };
 		A20000000000000000000001 /* Frameworks/TMapSDK.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A20000000000000000000010 /* Frameworks/TMapSDK.xcframework */; };
 		A20000000000000000000002 /* Frameworks/VSMSDK.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A20000000000000000000011 /* Frameworks/VSMSDK.xcframework */; };
 		A20000000000000000000003 /* Frameworks/TMapSDK.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A20000000000000000000010 /* Frameworks/TMapSDK.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		A20000000000000000000004 /* Frameworks/VSMSDK.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A20000000000000000000011 /* Frameworks/VSMSDK.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		B73989A0300619D500966BF4 /* NMapsMap in Frameworks */ = {isa = PBXBuildFile; productRef = B739899F300619D500966BF4 /* NMapsMap */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -58,9 +59,9 @@
 		A10000000000000000000010 /* LiveActivityWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LiveActivityWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000011 /* LiveActivityWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityWidget.swift; sourceTree = "<group>"; };
 		A10000000000000000000012 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		A10000000000000000000015 /* LiveActivity_Practice/Walking/Domain/WalkingModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivity_Practice/Walking/Domain/WalkingModels.swift; sourceTree = SOURCE_ROOT; };
-		A10000000000000000000016 /* LiveActivity_Practice/Walking/Presentation/WalkingActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivity_Practice/Walking/Presentation/WalkingActivityAttributes.swift; sourceTree = SOURCE_ROOT; };
-		A10000000000000000000017 /* LiveActivity_Practice/Walking/Presentation/StopWalkingIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivity_Practice/Walking/Presentation/StopWalkingIntent.swift; sourceTree = SOURCE_ROOT; };
+		A10000000000000000000015 /* WalkingModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivity_Practice/Features/Walking/Domain/Models/WalkingModels.swift; sourceTree = SOURCE_ROOT; };
+		A10000000000000000000016 /* WalkingActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivity_Practice/Features/Walking/Presentation/LiveActivity/WalkingActivityAttributes.swift; sourceTree = SOURCE_ROOT; };
+		A10000000000000000000017 /* StopWalkingIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivity_Practice/Features/Walking/Presentation/LiveActivity/StopWalkingIntent.swift; sourceTree = SOURCE_ROOT; };
 		A20000000000000000000010 /* Frameworks/TMapSDK.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = Frameworks/TMapSDK.xcframework; sourceTree = SOURCE_ROOT; };
 		A20000000000000000000011 /* Frameworks/VSMSDK.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = Frameworks/VSMSDK.xcframework; sourceTree = SOURCE_ROOT; };
 		B7F679EA3000C6E000631B6E /* LiveActivity_Practice.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LiveActivity_Practice.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -88,6 +89,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A20000000000000000000001 /* Frameworks/TMapSDK.xcframework in Frameworks */,
+				B73989A0300619D500966BF4 /* NMapsMap in Frameworks */,
 				A20000000000000000000002 /* Frameworks/VSMSDK.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -109,9 +111,9 @@
 			children = (
 				B7F679EC3000C6E000631B6E /* LiveActivity_Practice */,
 				A10000000000000000000050 /* LiveActivityWidget */,
-				A10000000000000000000015 /* LiveActivity_Practice/Walking/Domain/WalkingModels.swift */,
-				A10000000000000000000016 /* LiveActivity_Practice/Walking/Presentation/WalkingActivityAttributes.swift */,
-				A10000000000000000000017 /* LiveActivity_Practice/Walking/Presentation/StopWalkingIntent.swift */,
+				A10000000000000000000015 /* WalkingModels.swift */,
+				A10000000000000000000016 /* WalkingActivityAttributes.swift */,
+				A10000000000000000000017 /* StopWalkingIntent.swift */,
 				A20000000000000000000010 /* Frameworks/TMapSDK.xcframework */,
 				A20000000000000000000011 /* Frameworks/VSMSDK.xcframework */,
 				C30000000000000000000001 /* Config/AppConfiguration.xcconfig */,
@@ -144,8 +146,6 @@
 			dependencies = (
 			);
 			name = LiveActivityWidget;
-			packageProductDependencies = (
-			);
 			productName = LiveActivityWidget;
 			productReference = A10000000000000000000010 /* LiveActivityWidget.appex */;
 			productType = "com.apple.product-type.app-extension";
@@ -169,8 +169,6 @@
 				B7F679EC3000C6E000631B6E /* LiveActivity_Practice */,
 			);
 			name = LiveActivity_Practice;
-			packageProductDependencies = (
-			);
 			productName = LiveActivity_Practice;
 			productReference = B7F679EA3000C6E000631B6E /* LiveActivity_Practice.app */;
 			productType = "com.apple.product-type.application";
@@ -202,6 +200,9 @@
 			);
 			mainGroup = B7F679E13000C6E000631B6E;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				B739899E300619D500966BF4 /* XCRemoteSwiftPackageReference "SPM-NMapsMap" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = B7F679EB3000C6E000631B6E /* Products */;
 			projectDirPath = "";
@@ -236,9 +237,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000000000000000000002 /* LiveActivityWidget.swift in Sources */,
-				A10000000000000000000005 /* LiveActivity_Practice/Walking/Domain/WalkingModels.swift in Sources */,
-				A10000000000000000000006 /* LiveActivity_Practice/Walking/Presentation/WalkingActivityAttributes.swift in Sources */,
-				A10000000000000000000007 /* LiveActivity_Practice/Walking/Presentation/StopWalkingIntent.swift in Sources */,
+				A10000000000000000000005 /* WalkingModels.swift in Sources */,
+				A10000000000000000000006 /* WalkingActivityAttributes.swift in Sources */,
+				A10000000000000000000007 /* StopWalkingIntent.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -540,6 +541,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		B739899E300619D500966BF4 /* XCRemoteSwiftPackageReference "SPM-NMapsMap" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/navermaps/SPM-NMapsMap";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 3.23.3;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		B739899F300619D500966BF4 /* NMapsMap */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B739899E300619D500966BF4 /* XCRemoteSwiftPackageReference "SPM-NMapsMap" */;
+			productName = NMapsMap;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = B7F679E23000C6E000631B6E /* Project object */;
 }
