@@ -13,10 +13,11 @@ final class LandmarkBubbleView: UIView {
     private let bodyHeight: CGFloat = 50
     private let tailHeight: CGFloat = 11
 
-    init(index: Int, name: String) {
+    init(index: Int, name: String, isPassed: Bool = false) {
         super.init(frame: CGRect(x: 0, y: 0, width: 148, height: 61))
         backgroundColor = .clear
-        bubbleLayer.fillColor = UIColor.blue.cgColor
+        let accentColor: UIColor = isPassed ? .systemGray : .blue
+        bubbleLayer.fillColor = accentColor.cgColor
         bubbleLayer.strokeColor = UIColor.white.withAlphaComponent(0.5).cgColor
         bubbleLayer.lineWidth = 1
         bubbleLayer.shadowColor = UIColor.black.cgColor
@@ -27,7 +28,7 @@ final class LandmarkBubbleView: UIView {
 
         indexLabel.text = "\(index)"
         indexLabel.font = .systemFont(ofSize: 13, weight: .bold)
-        indexLabel.textColor = .blue
+        indexLabel.textColor = accentColor
         indexLabel.textAlignment = .center
         indexLabel.backgroundColor = .white
         indexLabel.layer.cornerRadius = 12

@@ -55,6 +55,7 @@ struct NaverMapRouteView: UIViewRepresentable {
         weak var locationButton: NMFLocationButton?
         var locationButtonBottomConstraint: NSLayoutConstraint?
         private var renderedRoute: WalkingRoute?
+        private var renderedPassedRouteIndex = -1
         private var lastCameraCommandID: Int?
         private var hasCenteredInitialLocation = false
         private var routePath: NMFPath?
@@ -77,8 +78,8 @@ struct NaverMapRouteView: UIViewRepresentable {
                 hasCenteredInitialLocation = true
             }
 
-            if renderedRoute != state.route {
-                render(route: state.route, on: mapView)
+            if renderedRoute != state.route || renderedPassedRouteIndex != state.passedRouteIndex {
+                render(route: state.route, passedRouteIndex: state.passedRouteIndex, on: mapView)
             }
             renderDeviationPath(state.deviationPath, on: mapView)
             updateLocationButtonLayout(hasRoute: state.route != nil)
@@ -149,7 +150,7 @@ struct NaverMapRouteView: UIViewRepresentable {
             locationButton?.superview?.layoutIfNeeded()
         }
 
-        private func render(route: WalkingRoute?, on mapView: NMFMapView) {
+        private func render(route: WalkingRoute?, passedRouteIndex: Int, on mapView: NMFMapView) {
             routePath?.mapView = nil
             deviationRoutePath?.mapView = nil
             routeMarkers.forEach { $0.mapView = nil }
@@ -162,6 +163,7 @@ struct NaverMapRouteView: UIViewRepresentable {
             landmarkAreas.removeAll()
             landmarkConnectors.removeAll()
             renderedRoute = route
+            renderedPassedRouteIndex = passedRouteIndex
 
             guard let route, route.path.count >= 2 else { return }
             let points = route.path.map { NMGLatLng(lat: $0.latitude, lng: $0.longitude) }
@@ -184,6 +186,7 @@ struct NaverMapRouteView: UIViewRepresentable {
                 addLandmark(
                     index: offset + 1,
                     selection: selection,
+                    isPassed: selection.maneuver.routeIndex <= passedRouteIndex,
                     on: mapView
                 )
             }
@@ -217,6 +220,7 @@ struct NaverMapRouteView: UIViewRepresentable {
         private func addLandmark(
             index: Int,
             selection: MapLandmarkSelection,
+            isPassed: Bool,
             on mapView: NMFMapView
         ) {
             let landmarkPosition = NMGLatLng(
@@ -231,14 +235,15 @@ struct NaverMapRouteView: UIViewRepresentable {
             let area = NMFCircleOverlay()
             area.center = landmarkPosition
             area.radius = 15
-            area.fillColor = UIColor.systemOrange.withAlphaComponent(0.32)
-            area.outlineColor = UIColor.systemOrange.withAlphaComponent(0.9)
+            let landmarkColor: UIColor = isPassed ? .systemGray : .systemOrange
+            area.fillColor = landmarkColor.withAlphaComponent(0.32)
+            area.outlineColor = landmarkColor.withAlphaComponent(0.9)
             area.outlineWidth = 2
             area.mapView = mapView
             landmarkAreas.append(area)
 
             if let connector = NMFPolylineOverlay([maneuverPosition, landmarkPosition]) {
-                connector.color = UIColor.systemOrange.withAlphaComponent(0.75)
+                connector.color = landmarkColor.withAlphaComponent(0.75)
                 connector.width = 2
                 connector.pattern = [4, 4]
                 connector.capType = .round
@@ -264,8 +269,8 @@ struct NaverMapRouteView: UIViewRepresentable {
 
             let landmarkMarker = NMFMarker(position: landmarkPosition)
             landmarkMarker.iconImage = NMFOverlayImage(
-                image: Self.landmarkBubbleImage(index: index, name: selection.landmark.name),
-                reuseIdentifier: "naver-landmark-\(selection.landmark.id)-\(index)"
+                image: Self.landmarkBubbleImage(index: index, name: selection.landmark.name, isPassed: isPassed),
+                reuseIdentifier: "naver-landmark-\(selection.landmark.id)-\(index)-\(isPassed)"
             )
             landmarkMarker.width = 148
             landmarkMarker.height = 61
@@ -278,8 +283,8 @@ struct NaverMapRouteView: UIViewRepresentable {
             routeMarkers.append(landmarkMarker)
         }
 
-        private static func landmarkBubbleImage(index: Int, name: String) -> UIImage {
-            let bubble = LandmarkBubbleView(index: index, name: name)
+        private static func landmarkBubbleImage(index: Int, name: String, isPassed: Bool) -> UIImage {
+            let bubble = LandmarkBubbleView(index: index, name: name, isPassed: isPassed)
             bubble.layoutIfNeeded()
             return UIGraphicsImageRenderer(bounds: bubble.bounds).image { context in
                 bubble.layer.render(in: context.cgContext)

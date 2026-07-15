@@ -39,8 +39,14 @@ struct TMapRouteView: UIViewRepresentable {
             on: mapView
         )
 
-        if context.coordinator.renderedRoute != state.route {
-            context.coordinator.render(state.route, on: mapView)
+        let routeChanged = context.coordinator.renderedRoute != state.route
+        if routeChanged || context.coordinator.renderedPassedRouteIndex != state.passedRouteIndex {
+            context.coordinator.render(
+                state.route,
+                passedRouteIndex: state.passedRouteIndex,
+                fitRoute: routeChanged,
+                on: mapView
+            )
         }
         context.coordinator.renderDeviationPath(state.deviationPath, on: mapView)
         context.coordinator.applyCamera(state: state, on: mapView)
@@ -53,6 +59,7 @@ struct TMapRouteView: UIViewRepresentable {
     final class Coordinator: NSObject, TMapViewDelegate {
         weak var mapView: TMapView?
         var renderedRoute: WalkingRoute?
+        var renderedPassedRouteIndex = -1
         private var centeredLocation: Coordinate?
         private var latestState: MapPresentationState?
         private var isMapReady = false
@@ -144,7 +151,7 @@ struct TMapRouteView: UIViewRepresentable {
         }
 
         @MainActor
-        func render(_ route: WalkingRoute?, on mapView: TMapView) {
+        func render(_ route: WalkingRoute?, passedRouteIndex: Int, fitRoute: Bool, on mapView: TMapView) {
             routeLine?.map = nil
             deviationLine?.map = nil
             routeMarkers.forEach { $0.map = nil }
@@ -159,6 +166,7 @@ struct TMapRouteView: UIViewRepresentable {
             landmarkConnectors.removeAll()
             landmarkOverlays.removeAll()
             renderedRoute = route
+            renderedPassedRouteIndex = passedRouteIndex
 
             guard let route, route.path.count >= 2 else { return }
 
@@ -177,17 +185,19 @@ struct TMapRouteView: UIViewRepresentable {
             }
 
             for (offset, selection) in route.mapLandmarkSelections().enumerated() {
+                let isPassed = selection.maneuver.routeIndex <= passedRouteIndex
+                let landmarkColor: UIColor = isPassed ? .systemGray : .systemOrange
                 let coordinate = selection.landmark.coordinate.clCoordinate
                 let cornerCoordinate = selection.maneuver.coordinate.clCoordinate
                 let area = TMapCircle(position: coordinate, radius: 15)
-                area.fillColor = UIColor.systemOrange.withAlphaComponent(0.32)
-                area.strokeColor = UIColor.systemOrange.withAlphaComponent(0.9)
+                area.fillColor = landmarkColor.withAlphaComponent(0.32)
+                area.strokeColor = landmarkColor.withAlphaComponent(0.9)
                 area.strokeWidth = 2
                 area.map = mapView
                 landmarkAreas.append(area)
 
                 let connector = TMapPolyline(coordinates: [cornerCoordinate, coordinate])
-                connector.strokeColor = UIColor.systemOrange.withAlphaComponent(0.75)
+                connector.strokeColor = landmarkColor.withAlphaComponent(0.75)
                 connector.strokeWidth = 2
                 connector.opacity = 0.8
                 connector.map = mapView
@@ -199,16 +209,18 @@ struct TMapRouteView: UIViewRepresentable {
                     on: mapView
                 )
 
-                let overlay = LandmarkBubbleView(index: offset + 1, name: selection.landmark.name)
+                let overlay = LandmarkBubbleView(index: offset + 1, name: selection.landmark.name, isPassed: isPassed)
                 overlay.isUserInteractionEnabled = false
                 mapView.addSubview(overlay)
                 landmarkOverlays[selection.landmark.id] = (offset + 1, coordinate, overlay)
             }
 
-            mapView.fitMapBoundsWithPolylines(
-                [polyline],
-                inset: UIEdgeInsets(top: 180, left: 45, bottom: 230, right: 45)
-            )
+            if fitRoute {
+                mapView.fitMapBoundsWithPolylines(
+                    [polyline],
+                    inset: UIEdgeInsets(top: 180, left: 45, bottom: 230, right: 45)
+                )
+            }
             updateLandmarkOverlayPositions(on: mapView)
         }
 

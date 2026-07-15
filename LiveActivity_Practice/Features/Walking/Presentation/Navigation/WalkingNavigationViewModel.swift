@@ -38,6 +38,7 @@ final class WalkingNavigationViewModel: NSObject, ObservableObject, CLLocationMa
     @Published private(set) var navigationAlignmentID: Int?
     @Published private(set) var deviationState: RouteDeviationState = .onRoute
     @Published private(set) var deviationPath: [Coordinate] = []
+    @Published private(set) var passedRouteIndex = -1
     @Published private(set) var distanceFromRoute: CLLocationDistance = 0
     @Published var shouldPresentReroutePrompt = false
     @Published private(set) var isLoading = false
@@ -100,6 +101,7 @@ final class WalkingNavigationViewModel: NSObject, ObservableObject, CLLocationMa
         }
         route = nil
         progress = nil
+        passedRouteIndex = -1
         errorMessage = nil
     }
 
@@ -164,6 +166,7 @@ final class WalkingNavigationViewModel: NSObject, ObservableObject, CLLocationMa
         do {
             route = try await repository.makeRoute(from: start, to: destination)
             progress = route.map(initialProgress)
+            passedRouteIndex = -1
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -174,6 +177,7 @@ final class WalkingNavigationViewModel: NSObject, ObservableObject, CLLocationMa
         do {
             try await activityManager.start(destinationName: destinationName, route: route)
             isNavigating = true
+            passedRouteIndex = -1
             navigationBearing = nil
             if let currentLocation {
                 updateNavigationBearing(at: currentLocation, route: route)
@@ -216,6 +220,7 @@ final class WalkingNavigationViewModel: NSObject, ObservableObject, CLLocationMa
             let newRoute = try await repository.makeRoute(from: currentLocation, to: destination)
             route = newRoute
             progress = initialProgress(newRoute)
+            passedRouteIndex = -1
             lastManeuverID = nil
             resetDeviationState()
             navigationBearing = nil
@@ -253,6 +258,9 @@ final class WalkingNavigationViewModel: NSObject, ObservableObject, CLLocationMa
                 routeMatch: routeMatch,
                 horizontalAccuracy: location.horizontalAccuracy
             )
+            if isNavigating, deviationState == .onRoute {
+                passedRouteIndex = max(passedRouteIndex, routeMatch.segmentIndex)
+            }
         }
         let newProgress = calculateProgress(at: coordinate, route: route)
         progress = newProgress

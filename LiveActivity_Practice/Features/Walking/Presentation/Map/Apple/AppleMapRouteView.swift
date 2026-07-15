@@ -32,8 +32,14 @@ struct AppleMapRouteView: UIViewRepresentable {
     }
 
     func updateUIView(_ mapView: MKMapView, context: Context) {
-        if context.coordinator.renderedRoute != state.route {
-            context.coordinator.render(state.route, on: mapView)
+        let routeChanged = context.coordinator.renderedRoute != state.route
+        if routeChanged || context.coordinator.renderedPassedRouteIndex != state.passedRouteIndex {
+            context.coordinator.render(
+                state.route,
+                passedRouteIndex: state.passedRouteIndex,
+                fitRoute: routeChanged,
+                on: mapView
+            )
         }
         context.coordinator.renderDeviationPath(state.deviationPath, on: mapView)
         context.coordinator.applyCamera(state: state, on: mapView)
@@ -45,6 +51,7 @@ struct AppleMapRouteView: UIViewRepresentable {
 
     final class Coordinator: NSObject, MKMapViewDelegate {
         var renderedRoute: WalkingRoute?
+        var renderedPassedRouteIndex = -1
         private var lastCameraCommandID: Int?
         private var overlays: [MKOverlay] = []
         private var annotations: [MKAnnotation] = []
@@ -52,6 +59,7 @@ struct AppleMapRouteView: UIViewRepresentable {
         private var deviationPolyline: MKPolyline?
         private var renderedDeviationPath: [Coordinate] = []
         private var lastNavigationAlignmentID: Int?
+        private var passedOverlayIDs = Set<ObjectIdentifier>()
 
         @MainActor
         func tearDown(on mapView: MKMapView) {
@@ -107,7 +115,7 @@ struct AppleMapRouteView: UIViewRepresentable {
         }
 
         @MainActor
-        func render(_ route: WalkingRoute?, on mapView: MKMapView) {
+        func render(_ route: WalkingRoute?, passedRouteIndex: Int, fitRoute: Bool, on mapView: MKMapView) {
             mapView.removeOverlays(overlays)
             mapView.removeAnnotations(annotations)
             overlays.removeAll()
@@ -116,6 +124,8 @@ struct AppleMapRouteView: UIViewRepresentable {
             deviationPolyline = nil
             renderedDeviationPath = []
             renderedRoute = route
+            renderedPassedRouteIndex = passedRouteIndex
+            passedOverlayIDs.removeAll()
             guard let route, route.path.count >= 2 else { return }
 
             let coordinates = route.path.map(\.clCoordinate)
@@ -132,26 +142,31 @@ struct AppleMapRouteView: UIViewRepresentable {
             }
 
             for (index, selection) in route.mapLandmarkSelections().enumerated() {
+                let isPassed = selection.maneuver.routeIndex <= passedRouteIndex
                 let coordinate = selection.landmark.coordinate.clCoordinate
                 let cornerCoordinate = selection.maneuver.coordinate.clCoordinate
                 let area = MKCircle(center: coordinate, radius: 15)
                 mapView.insertOverlay(area, below: polyline)
                 overlays.append(area)
+                if isPassed { passedOverlayIDs.insert(ObjectIdentifier(area)) }
 
                 let connectorCoordinates = [cornerCoordinate, coordinate]
                 let connector = MKPolyline(coordinates: connectorCoordinates, count: connectorCoordinates.count)
                 mapView.insertOverlay(connector, below: polyline)
                 overlays.append(connector)
+                if isPassed { passedOverlayIDs.insert(ObjectIdentifier(connector)) }
 
-                annotations.append(LandmarkAnnotation(index: index + 1, name: selection.landmark.name, coordinate: coordinate))
+                annotations.append(LandmarkAnnotation(index: index + 1, name: selection.landmark.name, coordinate: coordinate, isPassed: isPassed))
                 annotations.append(TurnPointAnnotation(turn: selection.maneuver.turn, coordinate: cornerCoordinate))
             }
             mapView.addAnnotations(annotations)
-            mapView.setVisibleMapRect(
-                polyline.boundingMapRect,
-                edgePadding: UIEdgeInsets(top: 180, left: 45, bottom: 230, right: 45),
-                animated: true
-            )
+            if fitRoute {
+                mapView.setVisibleMapRect(
+                    polyline.boundingMapRect,
+                    edgePadding: UIEdgeInsets(top: 180, left: 45, bottom: 230, right: 45),
+                    animated: true
+                )
+            }
         }
 
         @MainActor
@@ -175,8 +190,9 @@ struct AppleMapRouteView: UIViewRepresentable {
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
             if let circle = overlay as? MKCircle {
                 let renderer = MKCircleRenderer(circle: circle)
-                renderer.fillColor = UIColor.systemOrange.withAlphaComponent(0.32)
-                renderer.strokeColor = UIColor.systemOrange.withAlphaComponent(0.9)
+                let isPassed = passedOverlayIDs.contains(ObjectIdentifier(circle))
+                renderer.fillColor = (isPassed ? UIColor.systemGray : .systemOrange).withAlphaComponent(0.32)
+                renderer.strokeColor = (isPassed ? UIColor.systemGray : .systemOrange).withAlphaComponent(0.9)
                 renderer.lineWidth = 2
                 return renderer
             }
@@ -191,7 +207,8 @@ struct AppleMapRouteView: UIViewRepresentable {
                 renderer.lineWidth = 7
                 renderer.alpha = 0.9
             } else {
-                renderer.strokeColor = UIColor.systemOrange.withAlphaComponent(0.75)
+                let isPassed = passedOverlayIDs.contains(ObjectIdentifier(polyline))
+                renderer.strokeColor = (isPassed ? UIColor.systemGray : .systemOrange).withAlphaComponent(0.75)
                 renderer.lineWidth = 2
                 renderer.alpha = 0.8
                 renderer.lineDashPattern = [4, 4]
@@ -208,7 +225,7 @@ struct AppleMapRouteView: UIViewRepresentable {
                 let view = mapView.dequeueReusableAnnotationView(withIdentifier: identifier) as? LandmarkAnnotationView
                     ?? LandmarkAnnotationView(annotation: landmark, reuseIdentifier: identifier)
                 view.annotation = landmark
-                view.configure(index: landmark.index, name: landmark.name)
+                view.configure(index: landmark.index, name: landmark.name, isPassed: landmark.isPassed)
                 // MapKit 충돌 시 숫자가 작은 랜드마크를 더 앞에 배치한다.
                 view.zPriority = MKAnnotationViewZPriority(rawValue: Float(10_000 - landmark.index))
                 return view
@@ -249,10 +266,12 @@ private final class LandmarkAnnotation: NSObject, MKAnnotation {
     let index: Int
     let name: String
     let coordinate: CLLocationCoordinate2D
-    init(index: Int, name: String, coordinate: CLLocationCoordinate2D) {
+    let isPassed: Bool
+    init(index: Int, name: String, coordinate: CLLocationCoordinate2D, isPassed: Bool) {
         self.index = index
         self.name = name
         self.coordinate = coordinate
+        self.isPassed = isPassed
     }
 }
 
@@ -300,9 +319,12 @@ private final class LandmarkAnnotationView: MKAnnotationView {
 
     required init?(coder: NSCoder) { nil }
 
-    func configure(index: Int, name: String) {
+    func configure(index: Int, name: String, isPassed: Bool) {
         indexLabel.text = "\(index)"
         nameLabel.text = name
+        let accentColor: UIColor = isPassed ? .systemGray : .blue
+        bubbleLayer.fillColor = accentColor.cgColor
+        indexLabel.textColor = accentColor
     }
 
     override func layoutSubviews() {

@@ -26,6 +26,7 @@ struct WalkingNavigationView: View {
                 state: MapPresentationState(
                     route: viewModel.route,
                     deviationPath: viewModel.deviationPath,
+                    passedRouteIndex: viewModel.passedRouteIndex,
                     currentLocation: viewModel.currentLocation,
                     currentHeading: viewModel.currentHeading,
                     currentLocationAccuracy: viewModel.currentLocationAccuracy,
