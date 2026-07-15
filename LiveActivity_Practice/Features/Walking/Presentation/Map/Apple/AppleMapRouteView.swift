@@ -35,6 +35,7 @@ struct AppleMapRouteView: UIViewRepresentable {
         if context.coordinator.renderedRoute != state.route {
             context.coordinator.render(state.route, on: mapView)
         }
+        context.coordinator.renderDeviationPath(state.deviationPath, on: mapView)
         context.coordinator.applyCamera(state: state, on: mapView)
     }
 
@@ -48,6 +49,9 @@ struct AppleMapRouteView: UIViewRepresentable {
         private var overlays: [MKOverlay] = []
         private var annotations: [MKAnnotation] = []
         private var routePolyline: MKPolyline?
+        private var deviationPolyline: MKPolyline?
+        private var renderedDeviationPath: [Coordinate] = []
+        private var lastNavigationAlignmentID: Int?
 
         @MainActor
         func tearDown(on mapView: MKMapView) {
@@ -59,10 +63,29 @@ struct AppleMapRouteView: UIViewRepresentable {
             overlays.removeAll()
             annotations.removeAll()
             routePolyline = nil
+            deviationPolyline = nil
+            renderedDeviationPath = []
         }
 
         @MainActor
         func applyCamera(state: MapPresentationState, on mapView: MKMapView) {
+            if state.isNavigating,
+               let alignmentID = state.navigationAlignmentID,
+               alignmentID != lastNavigationAlignmentID,
+               let location = state.currentLocation,
+               let bearing = state.navigationBearing {
+                mapView.setUserTrackingMode(.none, animated: false)
+                let camera = MKMapCamera(
+                    lookingAtCenter: location.clCoordinate,
+                    fromDistance: 450,
+                    pitch: 0,
+                    heading: bearing
+                )
+                mapView.setCamera(camera, animated: true)
+                lastNavigationAlignmentID = alignmentID
+                return
+            }
+
             guard let command = state.cameraCommand,
                   command.id != lastCameraCommandID else { return }
 
@@ -90,6 +113,8 @@ struct AppleMapRouteView: UIViewRepresentable {
             overlays.removeAll()
             annotations.removeAll()
             routePolyline = nil
+            deviationPolyline = nil
+            renderedDeviationPath = []
             renderedRoute = route
             guard let route, route.path.count >= 2 else { return }
 
@@ -129,6 +154,24 @@ struct AppleMapRouteView: UIViewRepresentable {
             )
         }
 
+        @MainActor
+        func renderDeviationPath(_ path: [Coordinate], on mapView: MKMapView) {
+            guard renderedDeviationPath != path else { return }
+            if let deviationPolyline {
+                mapView.removeOverlay(deviationPolyline)
+                overlays.removeAll { $0 === deviationPolyline }
+            }
+            deviationPolyline = nil
+            renderedDeviationPath = path
+            guard path.count >= 2 else { return }
+
+            let coordinates = path.map(\.clCoordinate)
+            let polyline = MKPolyline(coordinates: coordinates, count: coordinates.count)
+            mapView.addOverlay(polyline, level: .aboveRoads)
+            overlays.append(polyline)
+            deviationPolyline = polyline
+        }
+
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
             if let circle = overlay as? MKCircle {
                 let renderer = MKCircleRenderer(circle: circle)
@@ -139,7 +182,11 @@ struct AppleMapRouteView: UIViewRepresentable {
             }
             guard let polyline = overlay as? MKPolyline else { return MKOverlayRenderer(overlay: overlay) }
             let renderer = MKPolylineRenderer(polyline: polyline)
-            if let routePolyline, polyline === routePolyline {
+            if let deviationPolyline, polyline === deviationPolyline {
+                renderer.strokeColor = .systemRed
+                renderer.lineWidth = 8
+                renderer.alpha = 0.95
+            } else if let routePolyline, polyline === routePolyline {
                 renderer.strokeColor = .systemBlue
                 renderer.lineWidth = 7
                 renderer.alpha = 0.9
@@ -162,6 +209,8 @@ struct AppleMapRouteView: UIViewRepresentable {
                     ?? LandmarkAnnotationView(annotation: landmark, reuseIdentifier: identifier)
                 view.annotation = landmark
                 view.configure(index: landmark.index, name: landmark.name)
+                // MapKit 충돌 시 숫자가 작은 랜드마크를 더 앞에 배치한다.
+                view.zPriority = MKAnnotationViewZPriority(rawValue: Float(10_000 - landmark.index))
                 return view
             }
             if let turnPoint = annotation as? TurnPointAnnotation {
@@ -226,8 +275,8 @@ private final class LandmarkAnnotationView: MKAnnotationView {
 
     override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
         super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
-        frame = CGRect(x: 0, y: 0, width: 148, height: 45)
-        centerOffset = CGPoint(x: 0, y: -22.5)
+        frame = CGRect(x: 0, y: 0, width: 148, height: 61)
+        centerOffset = CGPoint(x: 0, y: -30.5)
         backgroundColor = .clear
         displayPriority = .required
         bubbleLayer.fillColor = UIColor.blue.cgColor
@@ -243,6 +292,7 @@ private final class LandmarkAnnotationView: MKAnnotationView {
         indexLabel.clipsToBounds = true
         nameLabel.font = .systemFont(ofSize: 12, weight: .semibold)
         nameLabel.textColor = .white
+        nameLabel.numberOfLines = 2
         nameLabel.lineBreakMode = .byTruncatingTail
         addSubview(indexLabel)
         addSubview(nameLabel)
@@ -257,14 +307,14 @@ private final class LandmarkAnnotationView: MKAnnotationView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        let bodyHeight: CGFloat = 34
+        let bodyHeight: CGFloat = 50
         let path = UIBezierPath(roundedRect: CGRect(x: 0, y: 0, width: bounds.width, height: bodyHeight), cornerRadius: 17)
         path.move(to: CGPoint(x: bounds.midX - 8, y: bodyHeight - 1))
         path.addLine(to: CGPoint(x: bounds.midX, y: bounds.height))
         path.addLine(to: CGPoint(x: bounds.midX + 8, y: bodyHeight - 1))
         path.close()
         bubbleLayer.path = path.cgPath
-        indexLabel.frame = CGRect(x: 5, y: 5, width: 24, height: 24)
-        nameLabel.frame = CGRect(x: 36, y: 7, width: bounds.width - 44, height: 20)
+        indexLabel.frame = CGRect(x: 5, y: 13, width: 24, height: 24)
+        nameLabel.frame = CGRect(x: 36, y: 5, width: bounds.width - 44, height: 40)
     }
 }

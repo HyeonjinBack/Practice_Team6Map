@@ -10,11 +10,11 @@ final class LandmarkBubbleView: UIView {
     private let indexLabel = UILabel()
     private let nameLabel = UILabel()
     private let bubbleLayer = CAShapeLayer()
-    private let bodyHeight: CGFloat = 34
+    private let bodyHeight: CGFloat = 50
     private let tailHeight: CGFloat = 11
 
     init(index: Int, name: String) {
-        super.init(frame: CGRect(x: 0, y: 0, width: 148, height: 45))
+        super.init(frame: CGRect(x: 0, y: 0, width: 148, height: 61))
         backgroundColor = .clear
         bubbleLayer.fillColor = UIColor.blue.cgColor
         bubbleLayer.strokeColor = UIColor.white.withAlphaComponent(0.5).cgColor
@@ -36,6 +36,7 @@ final class LandmarkBubbleView: UIView {
         nameLabel.text = name
         nameLabel.font = .systemFont(ofSize: 12, weight: .semibold)
         nameLabel.textColor = .white
+        nameLabel.numberOfLines = 2
         nameLabel.lineBreakMode = .byTruncatingTail
         addSubview(indexLabel)
         addSubview(nameLabel)
@@ -53,7 +54,7 @@ final class LandmarkBubbleView: UIView {
         path.close()
         bubbleLayer.path = path.cgPath
         bubbleLayer.shadowPath = path.cgPath
-        indexLabel.frame = CGRect(x: 5, y: 5, width: 24, height: 24)
-        nameLabel.frame = CGRect(x: 36, y: 7, width: bounds.width - 44, height: 20)
+        indexLabel.frame = CGRect(x: 5, y: 13, width: 24, height: 24)
+        nameLabel.frame = CGRect(x: 36, y: 5, width: bounds.width - 44, height: 40)
     }
 }

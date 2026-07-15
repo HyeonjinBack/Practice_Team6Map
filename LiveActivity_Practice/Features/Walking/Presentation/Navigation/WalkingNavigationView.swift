@@ -25,9 +25,13 @@ struct WalkingNavigationView: View {
                 selectedProvider: selectedMapProvider,
                 state: MapPresentationState(
                     route: viewModel.route,
+                    deviationPath: viewModel.deviationPath,
                     currentLocation: viewModel.currentLocation,
                     currentHeading: viewModel.currentHeading,
                     currentLocationAccuracy: viewModel.currentLocationAccuracy,
+                    navigationBearing: viewModel.navigationBearing,
+                    navigationAlignmentID: viewModel.navigationAlignmentID,
+                    isNavigating: viewModel.isNavigating,
                     cameraCommand: cameraCommand
                 ),
                 appleEngine: AppleMapEngine(),
@@ -44,6 +48,9 @@ struct WalkingNavigationView: View {
             VStack(spacing: 12) {
                 if viewModel.isNavigating {
                     navigationDestinationPanel
+                    if viewModel.isOffRoute {
+                        offRouteBanner
+                    }
                 } else {
                     routeSearchPanel
                 }
@@ -110,6 +117,20 @@ struct WalkingNavigationView: View {
             } catch {
                 // 새 입력이 들어오면 이전 검색 작업을 조용히 취소한다.
             }
+        }
+        .confirmationDialog(
+            "경로를 벗어났습니다",
+            isPresented: $viewModel.shouldPresentReroutePrompt,
+            titleVisibility: .visible
+        ) {
+            Button("현재 위치에서 재탐색") {
+                Task { await viewModel.rerouteFromCurrentLocation() }
+            }
+            Button("기존 경로 유지", role: .cancel) {
+                viewModel.keepCurrentRoute()
+            }
+        } message: {
+            Text("현재 위치를 출발점으로 목적지까지 다시 탐색할 수 있습니다.")
         }
     }
 
@@ -209,6 +230,34 @@ struct WalkingNavigationView: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
+        .shadow(radius: 8)
+    }
+
+    private var offRouteBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+            VStack(alignment: .leading, spacing: 2) {
+                Text(viewModel.isRerouting ? "경로 재탐색 중…" : "경로를 벗어났습니다")
+                    .font(.subheadline.weight(.bold))
+                if !viewModel.isRerouting {
+                    Text("기존 경로에서 약 \(Int(viewModel.distanceFromRoute))m 떨어져 있습니다.")
+                        .font(.caption)
+                }
+            }
+            Spacer()
+            if !viewModel.isRerouting {
+                Button("재탐색") {
+                    Task { await viewModel.rerouteFromCurrentLocation() }
+                }
+                .buttonStyle(.bordered)
+                .tint(.white)
+            } else {
+                ProgressView().tint(.white)
+            }
+        }
+        .foregroundStyle(.white)
+        .padding(14)
+        .background(.red.opacity(0.9), in: RoundedRectangle(cornerRadius: 16))
         .shadow(radius: 8)
     }
 

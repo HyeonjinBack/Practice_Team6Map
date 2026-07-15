@@ -12,6 +12,13 @@ import Foundation
 final class WalkingNavigationViewModel: NSObject, ObservableObject, CLLocationManagerDelegate {
     enum SearchTarget { case start, destination }
 
+    enum RouteDeviationState: Equatable {
+        case onRoute
+        case suspected(distance: CLLocationDistance)
+        case offRoute(distance: CLLocationDistance)
+        case rerouting
+    }
+
     @Published var startName = ""
     @Published var startLatitude = "37.497942"
     @Published var startLongitude = "127.027621"
@@ -27,6 +34,12 @@ final class WalkingNavigationViewModel: NSObject, ObservableObject, CLLocationMa
     @Published private(set) var currentLocation: Coordinate?
     @Published private(set) var currentHeading: CLLocationDirection?
     @Published private(set) var currentLocationAccuracy: CLLocationAccuracy?
+    @Published private(set) var navigationBearing: CLLocationDirection?
+    @Published private(set) var navigationAlignmentID: Int?
+    @Published private(set) var deviationState: RouteDeviationState = .onRoute
+    @Published private(set) var deviationPath: [Coordinate] = []
+    @Published private(set) var distanceFromRoute: CLLocationDistance = 0
+    @Published var shouldPresentReroutePrompt = false
     @Published private(set) var isLoading = false
     @Published private(set) var isNavigating = false
     @Published var errorMessage: String?
@@ -39,6 +52,18 @@ final class WalkingNavigationViewModel: NSObject, ObservableObject, CLLocationMa
     private var lastManeuverID: Int?
     private var shouldTrackLocation = false
     private var shouldUseLocationAsStart = false
+    private var consecutiveOffRouteUpdates = 0
+    private var hasAskedForCurrentDeviation = false
+    private var navigationAlignmentSequence = 0
+
+    var isOffRoute: Bool {
+        switch deviationState {
+        case .offRoute, .rerouting: true
+        case .onRoute, .suspected: false
+        }
+    }
+
+    var isRerouting: Bool { deviationState == .rerouting }
 
     init(
         repository: WalkingRouteRepositoryProtocol = WalkingRouteRepository(),
@@ -149,6 +174,15 @@ final class WalkingNavigationViewModel: NSObject, ObservableObject, CLLocationMa
         do {
             try await activityManager.start(destinationName: destinationName, route: route)
             isNavigating = true
+            navigationBearing = nil
+            if let currentLocation {
+                updateNavigationBearing(at: currentLocation, route: route)
+            }
+            if navigationBearing == nil {
+                updateNavigationBearingFromRouteStart(route)
+            }
+            navigationAlignmentSequence += 1
+            navigationAlignmentID = navigationAlignmentSequence
             locationManager.requestWhenInUseAuthorization()
             locationManager.allowsBackgroundLocationUpdates = true
             locationManager.showsBackgroundLocationIndicator = true
@@ -165,6 +199,38 @@ final class WalkingNavigationViewModel: NSObject, ObservableObject, CLLocationMa
         locationManager.allowsBackgroundLocationUpdates = false
         await activityManager.end()
         isNavigating = false
+        navigationBearing = nil
+        navigationAlignmentID = nil
+        resetDeviationState()
+    }
+
+    func rerouteFromCurrentLocation() async {
+        guard isNavigating,
+              !isRerouting,
+              let currentLocation,
+              let destination = destinationCoordinate else { return }
+
+        shouldPresentReroutePrompt = false
+        deviationState = .rerouting
+        do {
+            let newRoute = try await repository.makeRoute(from: currentLocation, to: destination)
+            route = newRoute
+            progress = initialProgress(newRoute)
+            lastManeuverID = nil
+            resetDeviationState()
+            navigationBearing = nil
+            updateNavigationBearing(at: currentLocation, route: newRoute)
+            navigationAlignmentSequence += 1
+            navigationAlignmentID = navigationAlignmentSequence
+        } catch {
+            deviationState = .offRoute(distance: distanceFromRoute)
+            errorMessage = "경로를 다시 찾지 못했습니다: \(error.localizedDescription)"
+        }
+    }
+
+    func keepCurrentRoute() {
+        shouldPresentReroutePrompt = false
+        hasAskedForCurrentDeviation = true
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
@@ -181,8 +247,18 @@ final class WalkingNavigationViewModel: NSObject, ObservableObject, CLLocationMa
             shouldUseLocationAsStart = false
         }
         guard let route else { return }
+        if let routeMatch = matchToRoute(current: coordinate, routePath: route.path) {
+            updateDeviationState(
+                at: coordinate,
+                routeMatch: routeMatch,
+                horizontalAccuracy: location.horizontalAccuracy
+            )
+        }
         let newProgress = calculateProgress(at: coordinate, route: route)
         progress = newProgress
+        if isNavigating, navigationBearing == nil {
+            updateNavigationBearing(at: coordinate, route: route)
+        }
 
         let maneuverChanged = lastManeuverID != newProgress.nextManeuver?.id
         let enoughTimePassed = Date.now.timeIntervalSince(lastActivityUpdate) >= 15
@@ -274,7 +350,6 @@ final class WalkingNavigationViewModel: NSObject, ObservableObject, CLLocationMa
             $0.element.distance(to: current) < $1.element.distance(to: current)
         }) else { return initialProgress(route) }
 
-        let isOffRoute = nearest.element.distance(to: current) > 25
         let next = route.maneuvers.first { $0.routeIndex > nearest.offset }
         let nextDistance = next.map { Int(current.distance(to: $0.coordinate)) } ?? 0
         let remaining = zip(route.path[nearest.offset...], route.path.dropFirst(nearest.offset + 1))
@@ -284,7 +359,170 @@ final class WalkingNavigationViewModel: NSObject, ObservableObject, CLLocationMa
             remainingDistance: Int(remaining),
             distanceToNextManeuver: nextDistance,
             nextManeuver: next,
-            isOffRoute: isOffRoute
+            isOffRoute: self.isOffRoute
         )
+    }
+
+    private struct RouteMatch {
+        let segmentIndex: Int
+        let distance: CLLocationDistance
+        let snappedCoordinate: Coordinate
+    }
+
+    private func matchToRoute(current: Coordinate, routePath: [Coordinate]) -> RouteMatch? {
+        guard routePath.count >= 2 else { return nil }
+        return zip(routePath.indices, routePath.indices.dropFirst())
+            .map { indices in
+                let (startIndex, endIndex) = indices
+                return routeMatch(
+                    current: current,
+                    segmentStart: routePath[startIndex],
+                    segmentEnd: routePath[endIndex],
+                    segmentIndex: startIndex
+                )
+            }
+            .min { $0.distance < $1.distance }
+    }
+
+    private func routeMatch(
+        current: Coordinate,
+        segmentStart: Coordinate,
+        segmentEnd: Coordinate,
+        segmentIndex: Int
+    ) -> RouteMatch {
+        let metersPerLatitudeDegree = 111_132.0
+        let metersPerLongitudeDegree = 111_320.0 * cos(current.latitude * .pi / 180)
+        let segmentX = (segmentEnd.longitude - segmentStart.longitude) * metersPerLongitudeDegree
+        let segmentY = (segmentEnd.latitude - segmentStart.latitude) * metersPerLatitudeDegree
+        let currentX = (current.longitude - segmentStart.longitude) * metersPerLongitudeDegree
+        let currentY = (current.latitude - segmentStart.latitude) * metersPerLatitudeDegree
+        let lengthSquared = segmentX * segmentX + segmentY * segmentY
+        let projection = lengthSquared > 0
+            ? max(0, min(1, (currentX * segmentX + currentY * segmentY) / lengthSquared))
+            : 0
+        let nearestX = segmentX * projection
+        let nearestY = segmentY * projection
+        let snappedCoordinate = Coordinate(
+            latitude: segmentStart.latitude + (segmentEnd.latitude - segmentStart.latitude) * projection,
+            longitude: segmentStart.longitude + (segmentEnd.longitude - segmentStart.longitude) * projection
+        )
+        return RouteMatch(
+            segmentIndex: segmentIndex,
+            distance: hypot(currentX - nearestX, currentY - nearestY),
+            snappedCoordinate: snappedCoordinate
+        )
+    }
+
+    private func updateDeviationState(
+        at current: Coordinate,
+        routeMatch: RouteMatch,
+        horizontalAccuracy: CLLocationAccuracy
+    ) {
+        guard isNavigating, deviationState != .rerouting else { return }
+        distanceFromRoute = routeMatch.distance
+        let validAccuracy = horizontalAccuracy >= 0 ? horizontalAccuracy : 0
+        let deviationThreshold = max(25, min(validAccuracy * 1.5, 60))
+        let recoveryThreshold: CLLocationDistance = 15
+
+        if isOffRoute {
+            if routeMatch.distance <= recoveryThreshold {
+                resetDeviationState()
+            } else {
+                deviationState = .offRoute(distance: routeMatch.distance)
+                appendDeviationCoordinate(current)
+            }
+            return
+        }
+
+        guard routeMatch.distance > deviationThreshold else {
+            consecutiveOffRouteUpdates = 0
+            deviationState = .onRoute
+            return
+        }
+
+        consecutiveOffRouteUpdates += 1
+        deviationState = .suspected(distance: routeMatch.distance)
+        guard consecutiveOffRouteUpdates >= 3 else { return }
+
+        deviationState = .offRoute(distance: routeMatch.distance)
+        deviationPath = [routeMatch.snappedCoordinate]
+        appendDeviationCoordinate(current)
+        if !hasAskedForCurrentDeviation {
+            hasAskedForCurrentDeviation = true
+            shouldPresentReroutePrompt = true
+        }
+    }
+
+    private func appendDeviationCoordinate(_ coordinate: Coordinate) {
+        guard deviationPath.last?.distance(to: coordinate) ?? .greatestFiniteMagnitude >= 3 else { return }
+        deviationPath.append(coordinate)
+    }
+
+    private func resetDeviationState() {
+        deviationState = .onRoute
+        deviationPath = []
+        distanceFromRoute = 0
+        consecutiveOffRouteUpdates = 0
+        hasAskedForCurrentDeviation = false
+        shouldPresentReroutePrompt = false
+    }
+
+    private func updateNavigationBearing(at current: Coordinate, route: WalkingRoute) {
+        guard isNavigating,
+              (currentLocationAccuracy ?? .greatestFiniteMagnitude) <= 30,
+              route.path.count >= 2,
+              let nearest = route.path.enumerated().min(by: {
+                  $0.element.distance(to: current) < $1.element.distance(to: current)
+              }) else {
+            navigationBearing = nil
+            return
+        }
+
+        let lookAheadDistance: CLLocationDistance = 20
+        var targetIndex = nearest.offset
+        var accumulatedDistance: CLLocationDistance = 0
+        while targetIndex < route.path.count - 1, accumulatedDistance < lookAheadDistance {
+            accumulatedDistance += route.path[targetIndex].distance(to: route.path[targetIndex + 1])
+            targetIndex += 1
+        }
+
+        guard targetIndex > nearest.offset else { return }
+        let candidate = bearing(from: route.path[nearest.offset], to: route.path[targetIndex])
+        navigationBearing = smoothedBearing(from: navigationBearing, to: candidate)
+    }
+
+    private func updateNavigationBearingFromRouteStart(_ route: WalkingRoute) {
+        guard route.path.count >= 2 else { return }
+
+        let lookAheadDistance: CLLocationDistance = 20
+        var targetIndex = 0
+        var accumulatedDistance: CLLocationDistance = 0
+        while targetIndex < route.path.count - 1, accumulatedDistance < lookAheadDistance {
+            accumulatedDistance += route.path[targetIndex].distance(to: route.path[targetIndex + 1])
+            targetIndex += 1
+        }
+
+        guard targetIndex > 0 else { return }
+        navigationBearing = bearing(from: route.path[0], to: route.path[targetIndex])
+    }
+
+    private func bearing(from start: Coordinate, to end: Coordinate) -> CLLocationDirection {
+        let startLatitude = start.latitude * .pi / 180
+        let endLatitude = end.latitude * .pi / 180
+        let longitudeDelta = (end.longitude - start.longitude) * .pi / 180
+        let y = sin(longitudeDelta) * cos(endLatitude)
+        let x = cos(startLatitude) * sin(endLatitude)
+            - sin(startLatitude) * cos(endLatitude) * cos(longitudeDelta)
+        return (atan2(y, x) * 180 / .pi + 360).truncatingRemainder(dividingBy: 360)
+    }
+
+    private func smoothedBearing(
+        from previous: CLLocationDirection?,
+        to candidate: CLLocationDirection
+    ) -> CLLocationDirection {
+        guard let previous else { return candidate }
+        let shortestDelta = (candidate - previous + 540).truncatingRemainder(dividingBy: 360) - 180
+        guard abs(shortestDelta) >= 3 else { return previous }
+        return (previous + shortestDelta * 0.35 + 360).truncatingRemainder(dividingBy: 360)
     }
 }

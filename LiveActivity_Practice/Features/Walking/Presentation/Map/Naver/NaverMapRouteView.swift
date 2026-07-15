@@ -58,6 +58,9 @@ struct NaverMapRouteView: UIViewRepresentable {
         private var lastCameraCommandID: Int?
         private var hasCenteredInitialLocation = false
         private var routePath: NMFPath?
+        private var deviationRoutePath: NMFPath?
+        private var renderedDeviationPath: [Coordinate] = []
+        private var lastNavigationAlignmentID: Int?
         private var routeMarkers: [NMFMarker] = []
         private var landmarkAreas: [NMFCircleOverlay] = []
         private var landmarkConnectors: [NMFPolylineOverlay] = []
@@ -77,7 +80,28 @@ struct NaverMapRouteView: UIViewRepresentable {
             if renderedRoute != state.route {
                 render(route: state.route, on: mapView)
             }
+            renderDeviationPath(state.deviationPath, on: mapView)
             updateLocationButtonLayout(hasRoute: state.route != nil)
+
+            if state.isNavigating,
+               let alignmentID = state.navigationAlignmentID,
+               alignmentID != lastNavigationAlignmentID,
+               let location = state.currentLocation,
+               let bearing = state.navigationBearing {
+                let position = NMFCameraPosition(
+                    NMGLatLng(lat: location.latitude, lng: location.longitude),
+                    zoom: 16,
+                    tilt: 0,
+                    heading: bearing
+                )
+                let update = NMFCameraUpdate(position: position)
+                update.animation = .easeOut
+                update.animationDuration = 0.4
+                mapView.moveCamera(update)
+                hasCenteredInitialLocation = true
+                lastNavigationAlignmentID = alignmentID
+                return
+            }
 
             guard let command = state.cameraCommand, command.id != lastCameraCommandID else { return }
             switch command.target {
@@ -106,10 +130,13 @@ struct NaverMapRouteView: UIViewRepresentable {
             locationButton?.mapView = nil
             locationButtonBottomConstraint?.isActive = false
             routePath?.mapView = nil
+            deviationRoutePath?.mapView = nil
             routeMarkers.forEach { $0.mapView = nil }
             landmarkAreas.forEach { $0.mapView = nil }
             landmarkConnectors.forEach { $0.mapView = nil }
             routePath = nil
+            deviationRoutePath = nil
+            renderedDeviationPath = []
             routeMarkers.removeAll()
             landmarkAreas.removeAll()
             landmarkConnectors.removeAll()
@@ -124,10 +151,13 @@ struct NaverMapRouteView: UIViewRepresentable {
 
         private func render(route: WalkingRoute?, on mapView: NMFMapView) {
             routePath?.mapView = nil
+            deviationRoutePath?.mapView = nil
             routeMarkers.forEach { $0.mapView = nil }
             landmarkAreas.forEach { $0.mapView = nil }
             landmarkConnectors.forEach { $0.mapView = nil }
             routePath = nil
+            deviationRoutePath = nil
+            renderedDeviationPath = []
             routeMarkers.removeAll()
             landmarkAreas.removeAll()
             landmarkConnectors.removeAll()
@@ -157,6 +187,23 @@ struct NaverMapRouteView: UIViewRepresentable {
                     on: mapView
                 )
             }
+        }
+
+        private func renderDeviationPath(_ path: [Coordinate], on mapView: NMFMapView) {
+            guard renderedDeviationPath != path else { return }
+            deviationRoutePath?.mapView = nil
+            deviationRoutePath = nil
+            renderedDeviationPath = path
+            guard path.count >= 2 else { return }
+
+            let points = path.map { NMGLatLng(lat: $0.latitude, lng: $0.longitude) }
+            let deviation = NMFPath(points: points)
+            deviation?.color = .systemRed
+            deviation?.outlineColor = .white
+            deviation?.width = 9
+            deviation?.outlineWidth = 2
+            deviation?.mapView = mapView
+            deviationRoutePath = deviation
         }
 
         private func addMarker(title: String, coordinate: Coordinate, color: UIColor, on mapView: NMFMapView) {
@@ -221,11 +268,12 @@ struct NaverMapRouteView: UIViewRepresentable {
                 reuseIdentifier: "naver-landmark-\(selection.landmark.id)-\(index)"
             )
             landmarkMarker.width = 148
-            landmarkMarker.height = 45
+            landmarkMarker.height = 61
             landmarkMarker.anchor = CGPoint(x: 0.5, y: 1)
             landmarkMarker.isForceShowIcon = true
             landmarkMarker.isHideCollidedSymbols = true
-            landmarkMarker.zIndex = 10_000 + index
+            // 숫자가 작은 랜드마크가 겹쳤을 때 더 앞에 표시되도록 한다.
+            landmarkMarker.zIndex = 10_000 - index
             landmarkMarker.mapView = mapView
             routeMarkers.append(landmarkMarker)
         }

@@ -35,9 +35,13 @@ struct MapCameraCommand: Equatable {
 
 struct MapPresentationState: Equatable {
     let route: WalkingRoute?
+    let deviationPath: [Coordinate]
     let currentLocation: Coordinate?
     let currentHeading: CLLocationDirection?
     let currentLocationAccuracy: CLLocationAccuracy?
+    let navigationBearing: CLLocationDirection?
+    let navigationAlignmentID: Int?
+    let isNavigating: Bool
     let cameraCommand: MapCameraCommand?
 }
 

@@ -42,6 +42,7 @@ struct TMapRouteView: UIViewRepresentable {
         if context.coordinator.renderedRoute != state.route {
             context.coordinator.render(state.route, on: mapView)
         }
+        context.coordinator.renderDeviationPath(state.deviationPath, on: mapView)
         context.coordinator.applyCamera(state: state, on: mapView)
     }
 
@@ -61,10 +62,13 @@ struct TMapRouteView: UIViewRepresentable {
         private var userHeadingMarker: TMapMarker?
         private var userAccuracyCircle: TMapCircle?
         private var routeLine: TMapPolyline?
+        private var deviationLine: TMapPolyline?
+        private var renderedDeviationPath: [Coordinate] = []
+        private var lastNavigationAlignmentID: Int?
         private var routeMarkers: [TMapMarker] = []
         private var landmarkAreas: [TMapCircle] = []
         private var landmarkConnectors: [TMapPolyline] = []
-        private var landmarkOverlays: [String: (coordinate: CLLocationCoordinate2D, view: LandmarkBubbleView)] = [:]
+        private var landmarkOverlays: [String: (index: Int, coordinate: CLLocationCoordinate2D, view: LandmarkBubbleView)] = [:]
 
         @MainActor
         func tearDown(on mapView: TMapView) {
@@ -72,6 +76,7 @@ struct TMapRouteView: UIViewRepresentable {
             userHeadingMarker?.map = nil
             userAccuracyCircle?.map = nil
             routeLine?.map = nil
+            deviationLine?.map = nil
             routeMarkers.forEach { $0.map = nil }
             landmarkAreas.forEach { $0.map = nil }
             landmarkConnectors.forEach { $0.map = nil }
@@ -82,6 +87,8 @@ struct TMapRouteView: UIViewRepresentable {
             userHeadingMarker = nil
             userAccuracyCircle = nil
             routeLine = nil
+            deviationLine = nil
+            renderedDeviationPath = []
             routeMarkers.removeAll()
             landmarkAreas.removeAll()
             landmarkConnectors.removeAll()
@@ -93,6 +100,20 @@ struct TMapRouteView: UIViewRepresentable {
         func applyCamera(state: MapPresentationState, on mapView: TMapView) {
             latestState = state
             guard isMapReady else { return }
+
+            if state.isNavigating,
+               let alignmentID = state.navigationAlignmentID,
+               alignmentID != lastNavigationAlignmentID,
+               let location = state.currentLocation,
+               let bearing = state.navigationBearing {
+                mapView.trackinMode = .none
+                mapView.heading = bearing
+                mapView.animateTo(location: location.clCoordinate)
+                centeredLocation = location
+                isFollowingUserLocation = false
+                lastNavigationAlignmentID = alignmentID
+                return
+            }
 
             if let command = state.cameraCommand,
                command.id != lastCameraCommandID {
@@ -125,11 +146,14 @@ struct TMapRouteView: UIViewRepresentable {
         @MainActor
         func render(_ route: WalkingRoute?, on mapView: TMapView) {
             routeLine?.map = nil
+            deviationLine?.map = nil
             routeMarkers.forEach { $0.map = nil }
             landmarkAreas.forEach { $0.map = nil }
             landmarkConnectors.forEach { $0.map = nil }
             landmarkOverlays.values.forEach { $0.view.removeFromSuperview() }
             routeLine = nil
+            deviationLine = nil
+            renderedDeviationPath = []
             routeMarkers.removeAll()
             landmarkAreas.removeAll()
             landmarkConnectors.removeAll()
@@ -178,7 +202,7 @@ struct TMapRouteView: UIViewRepresentable {
                 let overlay = LandmarkBubbleView(index: offset + 1, name: selection.landmark.name)
                 overlay.isUserInteractionEnabled = false
                 mapView.addSubview(overlay)
-                landmarkOverlays[selection.landmark.id] = (coordinate, overlay)
+                landmarkOverlays[selection.landmark.id] = (offset + 1, coordinate, overlay)
             }
 
             mapView.fitMapBoundsWithPolylines(
@@ -186,6 +210,22 @@ struct TMapRouteView: UIViewRepresentable {
                 inset: UIEdgeInsets(top: 180, left: 45, bottom: 230, right: 45)
             )
             updateLandmarkOverlayPositions(on: mapView)
+        }
+
+        @MainActor
+        func renderDeviationPath(_ path: [Coordinate], on mapView: TMapView) {
+            guard renderedDeviationPath != path else { return }
+            deviationLine?.map = nil
+            deviationLine = nil
+            renderedDeviationPath = path
+            guard path.count >= 2 else { return }
+
+            let polyline = TMapPolyline(coordinates: path.map(\.clCoordinate))
+            polyline.strokeColor = .systemRed
+            polyline.strokeWidth = 8
+            polyline.opacity = 0.95
+            polyline.map = mapView
+            deviationLine = polyline
         }
 
         @MainActor
@@ -314,12 +354,15 @@ struct TMapRouteView: UIViewRepresentable {
 
         @MainActor
         private func updateLandmarkOverlayPositions(on mapView: TMapView) {
-            for item in landmarkOverlays.values {
+            let orderedItems = landmarkOverlays.values.sorted { $0.index > $1.index }
+            for item in orderedItems {
                 guard let point = mapView.convertCoordinatesToPoint(item.coordinate) else { continue }
                 item.view.frame.origin = CGPoint(
                     x: point.x - item.view.bounds.width / 2,
                     y: point.y - item.view.bounds.height
                 )
+                // 마지막에 올린 뷰가 가장 앞에 오므로 낮은 인덱스를 나중에 처리한다.
+                mapView.bringSubviewToFront(item.view)
             }
         }
 
